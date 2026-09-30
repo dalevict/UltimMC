@@ -1,0 +1,82 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: build-windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          arch: 'win32_msvc2019'
+          modules: 'qtwebengine'
+          cache: true
+
+      - name: Install zlib
+        shell: pwsh
+        run: |
+          vcpkg install zlib:x64-windows
+
+      - name: Configure
+        shell: bash
+        run: |
+          mkdir build
+          cd build
+
+          cmake \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-windows \
+            -DLauncher_LAYOUT=win-bundle \
+            -DLauncher_BUILD_PLATFORM=win32 \
+            -DLauncher_NOTIFICATION_URL:STRING=https://files.multimc.org/notifications.json \
+            -DLauncher_UPDATER_BASE=https://files.multimc.org/update/ \
+            -DLauncher_ANALYTICS_ID:STRING=UA-87731965-2 \
+            -DLauncher_BUG_TRACKER_URL=https://github.com/UltimMC/Launcher/issues \
+            ..
+            
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+
+      - name: Install
+        run: |
+          cmake --install build --config Release --prefix "$env:GITHUB_WORKSPACE\package"
+
+      - name: Show package
+        shell: pwsh
+        run: |
+          Get-ChildItem "$env:GITHUB_WORKSPACE\package" -Recurse |
+            Select-Object FullName
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "$env:GITHUB_WORKSPACE\package\*" `
+            -DestinationPath "$env:GITHUB_WORKSPACE\mmc-cracked-win32.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmc-cracked-win32
+          path: mmc-cracked-win32.zip
+          if-no-files-found: error
